@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap">
 
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=20260902">
+<link rel="stylesheet" href="styles.css?v=20260903">
 <!-- TODO: si activas Google AdSense, añade aquí el script de tu CMP (banner de consentimiento de cookies) antes de activar los anuncios -->
 
 <script type="importmap">
@@ -88,6 +88,12 @@
         <div class="tool-controls" data-tool-controls>
 
           <div class="field-group">
+            <span class="field-label">Temas rápidos (aplican todo de un clic)</span>
+            <div class="theme-strip" data-theme-strip></div>
+            <p class="combo-count">16 estilos × 4 formas × 6 patrones × 5 marcos × colores libres = miles de combinaciones distintas.</p>
+          </div>
+
+          <div class="field-group">
             <label class="field-label" for="qr-content-type">Contenido del QR</label>
             <div class="segmented" role="tablist" aria-label="Tipo de contenido">
               <button type="button" class="seg-btn is-active" data-content-type="link" role="tab" aria-selected="true">Enlace / texto</button>
@@ -140,6 +146,16 @@
               </label>
             </div>
             <p class="hint" data-contrast-hint></p>
+          </div>
+
+          <div class="field-group">
+            <span class="field-label">Forma del QR</span>
+            <div class="shape-grid" data-shape-grid></div>
+          </div>
+
+          <div class="field-group">
+            <span class="field-label">Patrón de fondo</span>
+            <div class="pattern-grid" data-pattern-grid></div>
           </div>
 
           <div class="field-group">
@@ -292,6 +308,6 @@
 <script defer src="lib/vendor/qr-code-styling.js"></script>
 <script defer src="lib/vendor/jszip.min.js"></script>
 <script defer src="lib/manifest.js"></script>
-<script defer src="main.js?v=20260902"></script>
+<script defer src="main.js?v=20260903"></script>
 </body>
 </html>

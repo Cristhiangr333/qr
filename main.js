@@ -8,7 +8,7 @@
   const $$ = (sel, scope) => Array.from((scope || document).querySelectorAll(sel));
   const escHTML = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  function safe(fn, name) { try { return fn(); } catch (e) { console.warn("[" + name + "]", e); } }
+  function safe(fn, name) { try { const r = fn(); if (r && typeof r.catch === "function") r.catch(e => console.warn("[" + name + "]", e)); return r; } catch (e) { console.warn("[" + name + "]", e); } }
   function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
   const BRAND = window.__BRAND__ || {};
 
@@ -28,7 +28,9 @@
     colorCode2: "#D9622B",
     gradientType: "linear", // 'linear' | 'radial'
     center: { type: null, value: null }, // type: 'emoji'|'logo'
-    frame: "ninguno", // 'ninguno' | 'arriba' | 'abajo'
+    bgShape: "cuadrado", // 'cuadrado' | 'redondeado' | 'circular' | 'hexagonal'
+    bgPattern: "ninguno", // 'ninguno' | 'puntos' | 'rayas' | 'cuadros' | 'olas' | 'confeti'
+    frame: "ninguno", // 'ninguno' | 'barra-arriba' | 'barra-abajo' | 'cinta-esquina' | 'burbuja'
     frameText: "ESCANÉAME",
     format: "soporte",
     objectText: ""
@@ -157,6 +159,78 @@
     $$("[data-frame-text-el]", root).forEach(el => { el.textContent = state.frameText || "ESCANÉAME"; });
   }
 
+  function mountShapeGrid() {
+    const el = $("[data-shape-grid]");
+    if (!el || el.children.length || !BRAND.backgroundShapes) return;
+    el.innerHTML = BRAND.backgroundShapes.map((s, i) => `
+      <button type="button" class="shape-btn${i === 0 ? " is-active" : ""}" data-shape="${s.key}">
+        <span class="format-icon">${s.icon}</span><span>${escHTML(s.label)}</span>
+      </button>
+    `).join("");
+    $$("[data-shape]", el).forEach(btn => btn.addEventListener("click", () => {
+      state.bgShape = btn.dataset.shape;
+      $$("[data-shape]", el).forEach(b => b.classList.toggle("is-active", b === btn));
+      requestRebuild();
+    }));
+  }
+
+  function mountPatternGrid() {
+    const el = $("[data-pattern-grid]");
+    if (!el || el.children.length || !BRAND.backgroundPatterns) return;
+    el.innerHTML = BRAND.backgroundPatterns.map((p, i) => `
+      <button type="button" class="pattern-btn${i === 0 ? " is-active" : ""}" data-pattern="${p.key}">
+        <span class="format-icon">${p.icon}</span><span>${escHTML(p.label)}</span>
+      </button>
+    `).join("");
+    $$("[data-pattern]", el).forEach(btn => btn.addEventListener("click", () => {
+      state.bgPattern = btn.dataset.pattern;
+      $$("[data-pattern]", el).forEach(b => b.classList.toggle("is-active", b === btn));
+      requestRebuild();
+    }));
+  }
+
+  function mountThemeStrip() {
+    const el = $("[data-theme-strip]");
+    if (!el || el.children.length || !BRAND.themePresets) return;
+    el.innerHTML = BRAND.themePresets.map(t => `
+      <button type="button" class="theme-chip" data-theme="${t.key}" title="${escHTML(t.label)}">
+        <span class="theme-swatch" style="background:linear-gradient(135deg, ${t.base} 50%, ${t.code} 50%)"></span>
+        <span>${escHTML(t.label)}</span>
+      </button>
+    `).join("");
+    $$("[data-theme]", el).forEach(btn => btn.addEventListener("click", () => applyTheme(btn.dataset.theme, btn)));
+  }
+
+  function applyTheme(key, btnEl) {
+    const t = (BRAND.themePresets || []).find(p => p.key === key);
+    if (!t) return;
+    state.style = t.style;
+    state.colorBase = t.base;
+    state.colorCode = t.code;
+    state.codeMode = "solid";
+    state.frame = t.frame;
+    state.frameText = t.frameText;
+    state.bgShape = t.shape;
+    state.bgPattern = t.pattern;
+
+    // reflect into every control's visual state
+    $$("[data-theme]").forEach(b => b.classList.toggle("is-active", b === btnEl));
+    $$("[data-style]").forEach(b => b.classList.toggle("is-active", b.dataset.style === t.style));
+    $$("[data-shape]").forEach(b => b.classList.toggle("is-active", b.dataset.shape === t.shape));
+    $$("[data-pattern]").forEach(b => b.classList.toggle("is-active", b.dataset.pattern === t.pattern));
+    $$("[data-frame]").forEach(b => b.classList.toggle("is-active", b.dataset.frame === t.frame));
+    $$("[data-code-mode]").forEach(b => b.classList.toggle("is-active", b.dataset.codeMode === "solid"));
+    $("[data-gradient-row]").hidden = true;
+    $("#color-base").value = t.base;
+    $("#color-code").value = t.code;
+    $("#frame-text").value = t.frameText;
+    const frameActive = t.frame !== "ninguno";
+    $("#frame-text").hidden = !frameActive;
+    $("[data-cta-chips]").hidden = !frameActive;
+
+    requestRebuild();
+  }
+
   function mountEmojiPicker() {
     const el = $("[data-emoji-picker]");
     if (!el || el.children.length) return;
@@ -243,16 +317,136 @@
   }
 
   /* ---------------------------------------------------------------------
+   * Background patterns & shape clipping (shared by live preview + PNG export)
+   * ------------------------------------------------------------------- */
+  function hexToRgba(hex, alpha) {
+    const c = hex.replace("#", "");
+    const r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function seededRandom(seed) {
+    let s = seed % 2147483647; if (s <= 0) s += 2147483646;
+    return () => (s = (s * 16807) % 2147483647) / 2147483647;
+  }
+
+  function drawPattern(ctx, size, pattern, colorBase, colorCode) {
+    ctx.save();
+    ctx.fillStyle = colorBase;
+    ctx.fillRect(0, 0, size, size);
+    const accent = hexToRgba(colorCode, 0.16);
+    if (pattern === "puntos") {
+      const step = size / 14;
+      ctx.fillStyle = accent;
+      for (let y = step / 2; y < size; y += step) for (let x = step / 2; x < size; x += step) {
+        ctx.beginPath(); ctx.arc(x, y, step * 0.14, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (pattern === "rayas") {
+      ctx.strokeStyle = accent; ctx.lineWidth = size / 45;
+      for (let x = -size; x < size * 2; x += size / 10) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + size, size); ctx.stroke();
+      }
+    } else if (pattern === "cuadros") {
+      const step = size / 10;
+      ctx.fillStyle = accent;
+      for (let y = 0; y < size; y += step) for (let x = 0; x < size; x += step) {
+        if ((Math.round(x / step) + Math.round(y / step)) % 2 === 0) ctx.fillRect(x, y, step, step);
+      }
+    } else if (pattern === "olas") {
+      ctx.strokeStyle = accent; ctx.lineWidth = size / 60;
+      const amp = size / 30, wave = size / 8;
+      for (let y = wave / 2; y < size; y += wave) {
+        ctx.beginPath();
+        for (let x = 0; x <= size; x += 4) ctx.lineTo(x, y + Math.sin(x / wave * Math.PI * 2) * amp);
+        ctx.stroke();
+      }
+    } else if (pattern === "confeti") {
+      const rand = seededRandom(42);
+      for (let i = 0; i < 46; i++) {
+        const x = rand() * size, y = rand() * size, r = size / 90 + rand() * (size / 55);
+        ctx.fillStyle = hexToRgba(colorCode, 0.14 + rand() * 0.12);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(rand() * Math.PI);
+        if (rand() > 0.5) ctx.fillRect(-r / 2, -r / 2, r, r);
+        else { ctx.beginPath(); ctx.arc(0, 0, r / 1.6, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function hexPath(ctx, size) {
+    const cx = size / 2, cy = size / 2, R = size / 2 * 0.98;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 180) * (60 * i - 30);
+      const x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function applyShapeClip(canvas, shape) {
+    if (!shape || shape === "cuadrado") return;
+    const ctx = canvas.getContext("2d");
+    const s = canvas.width;
+    ctx.globalCompositeOperation = "destination-in";
+    if (shape === "circular") { ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2); }
+    else if (shape === "redondeado") roundRectPath(ctx, 0, 0, s, s, s * 0.09);
+    else if (shape === "hexagonal") hexPath(ctx, s);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  const SHAPE_PAD = { cuadrado: 1, redondeado: 1, circular: 1.45, hexagonal: 1.5 };
+
+  /* Builds the final QR canvas: pattern (if any) + shape clip (if any) + the QR itself, centered. */
+  async function composeQRCanvas(sizePx) {
+    const needsTransparentBg = state.bgPattern !== "ninguno";
+    const opts = qrOptions(sizePx);
+    if (needsTransparentBg) opts.backgroundOptions = { color: "rgba(0,0,0,0)" };
+    const qr = new QRCodeStyling(opts);
+    const blob = await qr.getRawData("png");
+    const dataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl; });
+
+    const pad = SHAPE_PAD[state.bgShape] || 1;
+    const canvasSize = Math.round(sizePx * pad);
+    const c = document.createElement("canvas");
+    c.width = c.height = canvasSize;
+    const ctx = c.getContext("2d");
+
+    if (state.bgPattern !== "ninguno") drawPattern(ctx, canvasSize, state.bgPattern, state.colorBase, state.colorCode);
+    else if (pad > 1) { ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, canvasSize, canvasSize); }
+
+    const off = (canvasSize - sizePx) / 2;
+    ctx.drawImage(img, off, off, sizePx, sizePx);
+    applyShapeClip(c, state.bgShape);
+    return c;
+  }
+
+  /* ---------------------------------------------------------------------
    * 2D preview + PNG/SVG downloads
    * ------------------------------------------------------------------- */
-  let qrPreviewInstance = null;
+  let renderGen = 0;
 
-  function renderQR2D() {
+  async function renderQR2D() {
     const host = $("[data-qr-preview]");
     if (!host || !window.QRCodeStyling) return;
+    const myGen = ++renderGen;
+    const canvas = await composeQRCanvas(260);
+    if (myGen !== renderGen) return; // a newer render started meanwhile
     host.innerHTML = "";
-    qrPreviewInstance = new QRCodeStyling(qrOptions(260));
-    qrPreviewInstance.append(host);
+    host.appendChild(canvas);
   }
 
   async function drawFrame(qrBlob) {
@@ -341,14 +535,21 @@
 
   async function downloadImage(ext) {
     if (!window.QRCodeStyling) return;
-    const qr = new QRCodeStyling(qrOptions(1000));
-    let blob = await qr.getRawData(ext);
+    if (ext === "svg") {
+      // vector export stays a clean raw code (patterns/shapes are raster-only effects)
+      const qr = new QRCodeStyling(qrOptions(1000));
+      const blob = await qr.getRawData("svg");
+      if (blob) { saveBlob(blob, `qr-${slugFromPayload()}.svg`); notifyDownloaded(); }
+      return;
+    }
+    const canvas = await composeQRCanvas(1000);
+    let blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
     if (!blob) return;
-    if (ext === "png" && state.frame !== "ninguno") {
+    if (state.frame !== "ninguno") {
       const framed = await drawFrame(blob);
       if (framed) blob = framed;
     }
-    saveBlob(blob, `qr-${slugFromPayload()}.${ext}`);
+    saveBlob(blob, `qr-${slugFromPayload()}.png`);
     notifyDownloaded();
   }
 
@@ -385,11 +586,10 @@
   }
 
   function estimateModuleCount() {
-    // rough estimate from qr-code-styling internals if available, else heuristic from payload length
+    // ask qr-code-styling directly via a lightweight throwaway instance (no DOM insertion needed)
     try {
-      if (qrPreviewInstance && qrPreviewInstance._qr && typeof qrPreviewInstance._qr.getModuleCount === "function") {
-        return qrPreviewInstance._qr.getModuleCount();
-      }
+      const probe = new QRCodeStyling(qrOptions(64));
+      if (probe._qr && typeof probe._qr.getModuleCount === "function") return probe._qr.getModuleCount();
     } catch (_) {}
     const len = buildPayload().length;
     return Math.max(21, Math.min(65, 21 + Math.ceil(len / 6) * 2));
@@ -1068,6 +1268,9 @@
     safe(mountFaq, "mountFaq");
     safe(mountStyleGrid, "mountStyleGrid");
     safe(mountColorPresets, "mountColorPresets");
+    safe(mountShapeGrid, "mountShapeGrid");
+    safe(mountPatternGrid, "mountPatternGrid");
+    safe(mountThemeStrip, "mountThemeStrip");
     safe(mountEmojiPicker, "mountEmojiPicker");
     safe(mountFrameGrid, "mountFrameGrid");
     safe(mountCtaChips, "mountCtaChips");
