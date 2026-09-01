@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap">
 
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=20260901">
+<link rel="stylesheet" href="styles.css?v=20260902">
 <!-- TODO: si activas Google AdSense, añade aquí el script de tu CMP (banner de consentimiento de cookies) antes de activar los anuncios -->
 
 <script type="importmap">
@@ -84,8 +84,8 @@
     <div class="tool-card" data-state="idle">
 
       <div class="tool-grid">
-        <!-- Columna izquierda: controles -->
-        <div class="tool-controls">
+        <!-- Columna izquierda: controles (con scroll propio en escritorio) -->
+        <div class="tool-controls" data-tool-controls>
 
           <div class="field-group">
             <label class="field-label" for="qr-content-type">Contenido del QR</label>
@@ -155,8 +155,9 @@
           </div>
 
           <div class="field-group">
-            <span class="field-label">Marco (solo en la descarga PNG)</span>
-            <div class="segmented segmented-wrap" data-frame-grid></div>
+            <span class="field-label">Llamado a la acción (marco)</span>
+            <div class="frame-shape-grid" data-frame-grid></div>
+            <div class="cta-chips" data-cta-chips hidden></div>
             <input id="frame-text" class="text-input" type="text" maxlength="24" placeholder="ESCANÉAME" value="ESCANÉAME" hidden>
           </div>
 
@@ -197,7 +198,15 @@
         <!-- Columna derecha: previews -->
         <div class="tool-preview">
           <div class="preview-2d">
-            <div class="preview-2d-canvas" data-qr-preview></div>
+            <div class="preview-2d-frame" data-frame-root>
+              <div class="frame-bar frame-bar--top" data-frame-el="barra-arriba" hidden><span data-frame-text-el></span></div>
+              <div class="preview-2d-inner">
+                <div class="preview-2d-canvas" data-qr-preview></div>
+                <div class="frame-ribbon" data-frame-el="cinta-esquina" hidden><span data-frame-text-el></span></div>
+                <div class="frame-bubble" data-frame-el="burbuja" hidden><span data-frame-text-el></span><i class="frame-bubble-tail"></i></div>
+              </div>
+              <div class="frame-bar frame-bar--bottom" data-frame-el="barra-abajo" hidden><span data-frame-text-el></span></div>
+            </div>
           </div>
 
           <div class="preview-3d" data-viewer-root>
@@ -283,6 +292,6 @@
 <script defer src="lib/vendor/qr-code-styling.js"></script>
 <script defer src="lib/vendor/jszip.min.js"></script>
 <script defer src="lib/manifest.js"></script>
-<script defer src="main.js?v=20260901"></script>
+<script defer src="main.js?v=20260902"></script>
 </body>
 </html>

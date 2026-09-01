@@ -103,6 +103,16 @@ h1, h2, h3, h4 { text-wrap: balance; line-height: 1.08; letter-spacing: -0.01em;
 .tool-grid { display: grid; gap: 1.75rem; }
 @media (min-width: 960px) {
   .tool-grid { grid-template-columns: 1fr 1fr; align-items: start; }
+  .tool-controls {
+    max-height: calc(100svh - 118px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: .5rem;
+  }
+  .tool-preview {
+    position: sticky;
+    top: 78px; /* sticky header (62px) + gap */
+  }
 }
 
 /* ---------- 7. Controls ---------- */
@@ -157,9 +167,20 @@ h1, h2, h3, h4 { text-wrap: balance; line-height: 1.08; letter-spacing: -0.01em;
 .gradient-row { display: flex; gap: 1.25rem; align-items: center; margin-top: .5rem; }
 .gradient-type-label { display: flex; align-items: center; gap: .5rem; font-size: .82rem; font-weight: 600; color: var(--ink-soft); }
 .text-input-sm { padding: .4rem .5rem; width: auto; }
-.segmented-wrap { flex-wrap: wrap; width: 100%; }
-.segmented-wrap .seg-btn { flex: 1; text-align: center; }
 #frame-text { margin-top: .5rem; }
+
+.frame-shape-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; }
+.frame-shape-btn {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  padding: .55rem .2rem; border: 1.5px solid var(--line); border-radius: var(--radius-sm);
+  font-size: .68rem; font-weight: 700; transition: all .15s var(--ease-out);
+}
+.frame-shape-btn.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.frame-shape-btn .format-icon { font-size: 1.1rem; }
+
+.cta-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.cta-chip { padding: .35rem .7rem; border: 1.5px solid var(--line); border-radius: 999px; font-size: .74rem; font-weight: 700; color: var(--ink-soft); background: var(--surface); }
+.cta-chip.is-active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
 .format-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
 .format-btn { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: .75rem .4rem; border: 1.5px solid var(--line); border-radius: var(--radius-sm); font-size: .78rem; font-weight: 700; }
@@ -175,8 +196,37 @@ h1, h2, h3, h4 { text-wrap: balance; line-height: 1.08; letter-spacing: -0.01em;
 /* ---------- 8. Preview ---------- */
 .tool-preview { display: flex; flex-direction: column; gap: 1rem; }
 .preview-2d { display: flex; justify-content: center; padding: 1rem; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-md); }
-.preview-2d-canvas { width: 100%; max-width: 260px; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+.preview-2d-frame { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 280px; }
+.preview-2d-inner { position: relative; width: 100%; }
+.preview-2d-canvas { width: 100%; max-width: 260px; aspect-ratio: 1; margin-inline: auto; display: flex; align-items: center; justify-content: center; }
 .preview-2d-canvas canvas, .preview-2d-canvas img { width: 100%; height: 100%; border-radius: 10px; }
+
+.frame-bar {
+  width: 100%; padding: .55rem .75rem; border-radius: 10px;
+  font-weight: 800; font-size: .78rem; letter-spacing: .04em; text-align: center;
+  text-transform: uppercase;
+}
+.frame-bar--top { margin-bottom: .55rem; }
+.frame-bar--bottom { margin-top: .55rem; }
+
+.frame-ribbon {
+  position: absolute; top: 14px; right: -34px; width: 150px;
+  padding: .35rem 0; text-align: center; transform: rotate(40deg);
+  font-weight: 800; font-size: .68rem; letter-spacing: .03em; text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+}
+
+.frame-bubble {
+  position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
+  padding: .4rem .9rem; border-radius: 999px; white-space: nowrap;
+  font-weight: 800; font-size: .72rem; letter-spacing: .03em; text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.frame-bubble-tail {
+  position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+  width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent;
+  border-bottom: 7px solid currentColor;
+}
 
 .preview-3d { position: relative; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: linear-gradient(160deg, #EDEBE4, #DAD7CE); aspect-ratio: 4/3; }
 @media (prefers-color-scheme: dark) { .preview-3d { background: linear-gradient(160deg, #24262E, #1A1C22); } }

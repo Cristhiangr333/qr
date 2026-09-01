@@ -115,13 +115,46 @@
     const el = $("[data-frame-grid]");
     if (!el || el.children.length || !BRAND.framePresets) return;
     el.innerHTML = BRAND.framePresets.map((f, i) => `
-      <button type="button" class="seg-btn${i === 0 ? " is-active" : ""}" data-frame="${f.key}" role="tab" aria-selected="${i === 0}">${escHTML(f.label)}</button>
+      <button type="button" class="frame-shape-btn${i === 0 ? " is-active" : ""}" data-frame="${f.key}">
+        <span class="format-icon">${f.icon}</span><span>${escHTML(f.label)}</span>
+      </button>
     `).join("");
     $$("[data-frame]", el).forEach(btn => btn.addEventListener("click", () => {
       state.frame = btn.dataset.frame;
-      $$("[data-frame]", el).forEach(b => { b.classList.toggle("is-active", b === btn); b.setAttribute("aria-selected", b === btn); });
-      $("#frame-text").hidden = state.frame === "ninguno";
+      $$("[data-frame]", el).forEach(b => b.classList.toggle("is-active", b === btn));
+      const active = state.frame !== "ninguno";
+      $("#frame-text").hidden = !active;
+      $("[data-cta-chips]").hidden = !active;
+      updateFramePreview();
     }));
+  }
+
+  function mountCtaChips() {
+    const el = $("[data-cta-chips]");
+    if (!el || el.children.length || !BRAND.ctaPresets) return;
+    el.innerHTML = BRAND.ctaPresets.map(t => `<button type="button" class="cta-chip" data-cta="${escHTML(t)}">${escHTML(t)}</button>`).join("");
+    $$("[data-cta]", el).forEach(btn => btn.addEventListener("click", () => {
+      state.frameText = btn.dataset.cta;
+      $("#frame-text").value = state.frameText;
+      $$("[data-cta]", el).forEach(b => b.classList.toggle("is-active", b === btn));
+      updateFramePreview();
+    }));
+  }
+
+  function updateFramePreview() {
+    const root = $("[data-frame-root]");
+    if (!root) return;
+    $$("[data-frame-el]", root).forEach(el => {
+      const isActive = el.dataset.frameEl === state.frame;
+      el.hidden = !isActive;
+      if (isActive) {
+        el.style.background = state.colorCode;
+        el.style.color = state.colorBase;
+        const tail = $(".frame-bubble-tail", el);
+        if (tail) tail.style.borderBottomColor = state.colorCode;
+      }
+    });
+    $$("[data-frame-text-el]", root).forEach(el => { el.textContent = state.frameText || "ESCANÉAME"; });
   }
 
   function mountEmojiPicker() {
@@ -225,35 +258,85 @@
   async function drawFrame(qrBlob) {
     const qrDataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(qrBlob); });
     const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = qrDataUrl; });
-    const pad = Math.round(img.width * 0.06);
-    const barH = Math.round(img.width * 0.16);
-    const c = document.createElement("canvas");
-    c.width = img.width + pad * 2;
-    c.height = img.height + pad * 2 + barH;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = state.colorBase;
-    ctx.fillRect(0, 0, c.width, c.height);
-    const barY = state.frame === "arriba" ? 0 : c.height - barH;
-    const qrY = state.frame === "arriba" ? barH + pad : pad;
-    ctx.fillStyle = state.colorCode;
-    ctx.fillRect(0, barY, c.width, barH);
-    ctx.fillStyle = state.colorBase;
-    ctx.font = `800 ${Math.round(barH * 0.42)}px Manrope, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(state.frameText || "ESCANÉAME", c.width / 2, barY + barH / 2);
-    // small arrow pointing toward the code
-    const ax = c.width / 2, arrowH = Math.round(barH * 0.22);
-    const ay = state.frame === "arriba" ? barY + barH - 2 : barY + 2;
-    const dir = state.frame === "arriba" ? 1 : -1;
-    ctx.beginPath();
-    ctx.moveTo(ax - arrowH, ay);
-    ctx.lineTo(ax + arrowH, ay);
-    ctx.lineTo(ax, ay + arrowH * dir);
-    ctx.closePath();
-    ctx.fill();
-    ctx.drawImage(img, pad, qrY, img.width, img.height);
-    return new Promise((res) => c.toBlob(res, "image/png"));
+    const text = state.frameText || "ESCANÉAME";
+
+    if (state.frame === "barra-arriba" || state.frame === "barra-abajo") {
+      const pad = Math.round(img.width * 0.06);
+      const barH = Math.round(img.width * 0.16);
+      const c = document.createElement("canvas");
+      c.width = img.width + pad * 2;
+      c.height = img.height + pad * 2 + barH;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, c.width, c.height);
+      const barY = state.frame === "barra-arriba" ? 0 : c.height - barH;
+      const qrY = state.frame === "barra-arriba" ? barH + pad : pad;
+      ctx.fillStyle = state.colorCode; ctx.fillRect(0, barY, c.width, barH);
+      ctx.fillStyle = state.colorBase;
+      ctx.font = `800 ${Math.round(barH * 0.4)}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, c.width / 2, barY + barH / 2);
+      const ax = c.width / 2, arrowH = Math.round(barH * 0.22);
+      const ay = state.frame === "barra-arriba" ? barY + barH - 2 : barY + 2;
+      const dir = state.frame === "barra-arriba" ? 1 : -1;
+      ctx.beginPath(); ctx.moveTo(ax - arrowH, ay); ctx.lineTo(ax + arrowH, ay); ctx.lineTo(ax, ay + arrowH * dir); ctx.closePath(); ctx.fill();
+      ctx.drawImage(img, pad, qrY, img.width, img.height);
+      return new Promise((res) => c.toBlob(res, "image/png"));
+    }
+
+    if (state.frame === "cinta-esquina") {
+      const pad = Math.round(img.width * 0.12);
+      const c = document.createElement("canvas");
+      c.width = img.width + pad * 2; c.height = img.height + pad * 2;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, pad, pad, img.width, img.height);
+      const ribbonW = c.width * 0.62;
+      ctx.save();
+      ctx.translate(c.width - pad * 0.35, pad * 0.75);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = state.colorCode;
+      ctx.fillRect(-ribbonW / 2, -ribbonW * 0.13, ribbonW, ribbonW * 0.26);
+      ctx.fillStyle = state.colorBase;
+      ctx.font = `800 ${Math.round(ribbonW * 0.16)}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, 0, 1);
+      ctx.restore();
+      return new Promise((res) => c.toBlob(res, "image/png"));
+    }
+
+    if (state.frame === "burbuja") {
+      const pad = Math.round(img.width * 0.06);
+      const bubbleH = Math.round(img.width * 0.14);
+      const gap = Math.round(img.width * 0.06);
+      const c = document.createElement("canvas");
+      c.width = img.width + pad * 2; c.height = img.height + pad * 2 + bubbleH + gap;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, pad, pad, img.width, img.height);
+      const bw = img.width * 0.68, bx = c.width / 2 - bw / 2, by = pad + img.height + gap;
+      const r = bubbleH / 2;
+      ctx.fillStyle = state.colorCode;
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + bubbleH, r);
+      ctx.arcTo(bx + bw, by + bubbleH, bx, by + bubbleH, r);
+      ctx.arcTo(bx, by + bubbleH, bx, by, r);
+      ctx.arcTo(bx, by, bx + bw, by, r);
+      ctx.closePath(); ctx.fill();
+      const tailX = c.width / 2, tailH = gap * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(tailX - tailH * 0.6, by);
+      ctx.lineTo(tailX + tailH * 0.6, by);
+      ctx.lineTo(tailX, by - tailH);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = state.colorBase;
+      ctx.font = `800 ${Math.round(bubbleH * 0.42)}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, c.width / 2, by + bubbleH / 2 + 1);
+      return new Promise((res) => c.toBlob(res, "image/png"));
+    }
+
+    return null;
   }
 
   async function downloadImage(ext) {
@@ -867,6 +950,7 @@
    * ------------------------------------------------------------------- */
   const requestRebuild = debounce(() => {
     safe(renderQR2D, "renderQR2D");
+    safe(updateFramePreview, "updateFramePreview");
     safe(renderWarnings, "renderWarnings");
     if (viewer.started) safe(() => rebuildViewerModel(false), "rebuildViewerModel");
   }, 130);
@@ -926,7 +1010,7 @@
       requestRebuild();
     }));
 
-    $("#frame-text").addEventListener("input", debounce((e) => { state.frameText = e.target.value; }, 150));
+    $("#frame-text").addEventListener("input", debounce((e) => { state.frameText = e.target.value; updateFramePreview(); }, 150));
 
     $("#logo-upload").addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
@@ -986,8 +1070,10 @@
     safe(mountColorPresets, "mountColorPresets");
     safe(mountEmojiPicker, "mountEmojiPicker");
     safe(mountFrameGrid, "mountFrameGrid");
+    safe(mountCtaChips, "mountCtaChips");
     safe(initControls, "initControls");
     safe(renderQR2D, "renderQR2D");
+    safe(updateFramePreview, "updateFramePreview");
     safe(renderWarnings, "renderWarnings");
     safe(setupViewerVisibilityGuards, "setupViewerVisibilityGuards");
     safe(initDownloadDialog, "initDownloadDialog");
