@@ -24,7 +24,12 @@
     style: "redondeado",
     colorBase: "#F4F1EA",
     colorCode: "#1B1B22",
+    codeMode: "solid", // 'solid' | 'gradient'
+    colorCode2: "#D9622B",
+    gradientType: "linear", // 'linear' | 'radial'
     center: { type: null, value: null }, // type: 'emoji'|'logo'
+    frame: "ninguno", // 'ninguno' | 'arriba' | 'abajo'
+    frameText: "ESCANÉAME",
     format: "soporte",
     objectText: ""
   };
@@ -106,6 +111,19 @@
     }));
   }
 
+  function mountFrameGrid() {
+    const el = $("[data-frame-grid]");
+    if (!el || el.children.length || !BRAND.framePresets) return;
+    el.innerHTML = BRAND.framePresets.map((f, i) => `
+      <button type="button" class="seg-btn${i === 0 ? " is-active" : ""}" data-frame="${f.key}" role="tab" aria-selected="${i === 0}">${escHTML(f.label)}</button>
+    `).join("");
+    $$("[data-frame]", el).forEach(btn => btn.addEventListener("click", () => {
+      state.frame = btn.dataset.frame;
+      $$("[data-frame]", el).forEach(b => { b.classList.toggle("is-active", b === btn); b.setAttribute("aria-selected", b === btn); });
+      $("#frame-text").hidden = state.frame === "ninguno";
+    }));
+  }
+
   function mountEmojiPicker() {
     const el = $("[data-emoji-picker]");
     if (!el || el.children.length) return;
@@ -159,17 +177,29 @@
     return c.toDataURL("image/png");
   }
 
+  function codeFillOptions() {
+    if (state.codeMode !== "gradient") return { color: state.colorCode };
+    return {
+      gradient: {
+        type: state.gradientType === "radial" ? "radial" : "linear",
+        rotation: Math.PI / 4,
+        colorStops: [{ offset: 0, color: state.colorCode }, { offset: 1, color: state.colorCode2 }]
+      }
+    };
+  }
+
   function qrOptions(sizePx) {
     const s = styleOptions();
+    const fill = codeFillOptions();
     const opts = {
       width: sizePx, height: sizePx,
       margin: 8,
       type: "canvas",
       data: buildPayload(),
       qrOptions: { errorCorrectionLevel: hasCenterImage() ? "H" : "M" },
-      dotsOptions: { type: s.dots, color: state.colorCode },
-      cornersSquareOptions: { type: s.corners, color: state.colorCode },
-      cornersDotOptions: { type: s.cornerDot, color: state.colorCode },
+      dotsOptions: Object.assign({ type: s.dots }, fill),
+      cornersSquareOptions: Object.assign({ type: s.corners }, fill),
+      cornersDotOptions: Object.assign({ type: s.cornerDot }, fill),
       backgroundOptions: { color: state.colorBase }
     };
     if (hasCenterImage()) {
@@ -192,11 +222,49 @@
     qrPreviewInstance.append(host);
   }
 
+  async function drawFrame(qrBlob) {
+    const qrDataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(qrBlob); });
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = qrDataUrl; });
+    const pad = Math.round(img.width * 0.06);
+    const barH = Math.round(img.width * 0.16);
+    const c = document.createElement("canvas");
+    c.width = img.width + pad * 2;
+    c.height = img.height + pad * 2 + barH;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = state.colorBase;
+    ctx.fillRect(0, 0, c.width, c.height);
+    const barY = state.frame === "arriba" ? 0 : c.height - barH;
+    const qrY = state.frame === "arriba" ? barH + pad : pad;
+    ctx.fillStyle = state.colorCode;
+    ctx.fillRect(0, barY, c.width, barH);
+    ctx.fillStyle = state.colorBase;
+    ctx.font = `800 ${Math.round(barH * 0.42)}px Manrope, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(state.frameText || "ESCANÉAME", c.width / 2, barY + barH / 2);
+    // small arrow pointing toward the code
+    const ax = c.width / 2, arrowH = Math.round(barH * 0.22);
+    const ay = state.frame === "arriba" ? barY + barH - 2 : barY + 2;
+    const dir = state.frame === "arriba" ? 1 : -1;
+    ctx.beginPath();
+    ctx.moveTo(ax - arrowH, ay);
+    ctx.lineTo(ax + arrowH, ay);
+    ctx.lineTo(ax, ay + arrowH * dir);
+    ctx.closePath();
+    ctx.fill();
+    ctx.drawImage(img, pad, qrY, img.width, img.height);
+    return new Promise((res) => c.toBlob(res, "image/png"));
+  }
+
   async function downloadImage(ext) {
     if (!window.QRCodeStyling) return;
     const qr = new QRCodeStyling(qrOptions(1000));
-    const blob = await qr.getRawData(ext);
+    let blob = await qr.getRawData(ext);
     if (!blob) return;
+    if (ext === "png" && state.frame !== "ninguno") {
+      const framed = await drawFrame(blob);
+      if (framed) blob = framed;
+    }
     saveBlob(blob, `qr-${slugFromPayload()}.${ext}`);
     notifyDownloaded();
   }
@@ -213,9 +281,12 @@
    * Print-quality warnings
    * ------------------------------------------------------------------- */
   const FORMATS = {
-    soporte: { label: "soporte de mesa", qrSizeMM: 40, thetaDeg: 38, frontWallMM: 4, thicknessBase: 3.2, textStripMM: 8 },
-    llavero: { label: "llavero", qrSizeMM: 26, thickness: 3, ringHoleMM: 4.5, textStripMM: 5 },
-    placa: { label: "placa de pared", qrSizeMM: 46, thickness: 3.2, hangHoleMM: 4, textStripMM: 6 }
+    soporte: { label: "soporte de mesa", shape: "wedge", qrSizeMM: 40, thetaDeg: 38, frontWallMM: 4, thicknessBase: 3.2, textStripMM: 8 },
+    llavero: { label: "llavero", shape: "rect", qrSizeMM: 26, thickness: 3, hasHole: true, ringHoleMM: 4.5, textStripMM: 5 },
+    placa: { label: "placa de pared", shape: "rect", qrSizeMM: 46, thickness: 3.2, hasHole: true, hangHoleMM: 4, textStripMM: 6 },
+    iman: { label: "imán", shape: "rect", qrSizeMM: 22, thickness: 2.6, hasHole: false, textStripMM: 4 },
+    posavasos: { label: "posavasos", shape: "circle", qrSizeMM: 38, diameterMM: 90, thickness: 4, textStripMM: 7 },
+    "placa-redonda": { label: "placa redonda", shape: "circle", qrSizeMM: 46, diameterMM: 78, thickness: 3.2, textStripMM: 6 }
   };
 
   function luminance(hex) {
@@ -416,22 +487,21 @@
 
   /* Design-face frame: returns {origin, uDir, vDir, nDir, faceWidth, faceHeight} in world (X=width,Y=up,Z=toward-camera) */
   function designFace(fmt) {
-    if (state.format === "soporte") {
+    if (fmt.shape === "wedge") {
       const theta = fmt.thetaDeg * Math.PI / 180;
       const faceLength = fmt.qrSizeMM + fmt.textStripMM + 6; // qr + gap + text strip + top margin
       const backZ = faceLength * Math.sin(theta);
-      const riseY = faceLength * Math.cos(theta);
       const uDir = [1, 0, 0];
       const vDir = norm3([0, Math.cos(theta), -Math.sin(theta)]);
       const nDir = norm3(cross3(uDir, vDir));
       const origin = [-fmt.qrSizeMM / 2 - 4, fmt.frontWallMM, backZ];
       return { origin, uDir, vDir, nDir, faceWidth: fmt.qrSizeMM + 8, faceHeight: faceLength, thickness: fmt.thicknessBase };
     }
-    // llavero / placa: flat, facing camera (+Z)
-    const extraTop = state.format === "llavero" ? fmt.ringHoleMM + 6 : fmt.hangHoleMM + 6;
+    // rect (llavero / placa / iman) or circle (posavasos / placa-redonda): flat, facing camera (+Z)
+    const extraTop = fmt.hasHole ? (fmt.ringHoleMM || fmt.hangHoleMM || 4) + 6 : 4;
     const faceHeight = fmt.qrSizeMM + fmt.textStripMM + extraTop;
     const uDir = [1, 0, 0], vDir = [0, 1, 0], nDir = [0, 0, 1];
-    const origin = [-fmt.qrSizeMM / 2 - 4, 3, fmt.thickness];
+    const origin = [-fmt.qrSizeMM / 2 - 4, fmt.shape === "circle" ? (fmt.diameterMM - faceHeight) / 2 : 3, fmt.thickness];
     return { origin, uDir, vDir, nDir, faceWidth: fmt.qrSizeMM + 8, faceHeight, thickness: fmt.thickness, extraTop };
   }
 
@@ -447,10 +517,33 @@
     });
   }
 
-  /* Base builders — return a triangle soup for the base plate/wedge */
+  /* Circular disc (coaster / round plaque): triangle-fan top+bottom caps + side wall */
+  function addDiscSoup(soup, radius, thickness, segments) {
+    segments = segments || 48;
+    const top = [], bottom = [];
+    for (let i = 0; i < segments; i++) {
+      const a = (i / segments) * Math.PI * 2;
+      const x = Math.cos(a) * radius, z = Math.sin(a) * radius;
+      top.push([x, thickness, z]);
+      bottom.push([x, 0, z]);
+    }
+    const centerTop = [0, thickness, 0], centerBottom = [0, 0, 0];
+    for (let i = 0; i < segments; i++) {
+      const j = (i + 1) % segments;
+      pushTri(soup, centerTop, top[i], top[j]);          // top cap (CCW seen from +Y)
+      pushTri(soup, centerBottom, bottom[j], bottom[i]);  // bottom cap (CCW seen from -Y)
+      pushQuad(soup, bottom[i], bottom[j], top[j], top[i]); // side wall (outward)
+    }
+  }
+
+  /* Base builders — return a triangle soup for the base plate/wedge/disc */
   function buildBaseSoup(fmt, face) {
     const soup = newSoup();
-    if (state.format === "soporte") {
+    if (fmt.shape === "circle") {
+      addDiscSoup(soup, fmt.diameterMM / 2, fmt.thickness, 56);
+      return soup;
+    }
+    if (fmt.shape === "wedge") {
       const theta = fmt.thetaDeg * Math.PI / 180;
       const W = face.faceWidth, hw = W / 2;
       const backZ = face.faceHeight * Math.sin(theta);
@@ -475,31 +568,25 @@
       pushQuad(soup, B0, B1, B2, B3);
       return soup;
     }
-    // flat plate with a hole (llavero ring / placa hang holes), built as a boxy plate using addOrientedBox
-    // for simplicity the hole is left as a visual cue only via a thin rim (true boolean hole needs CSG which we avoid);
-    // instead we build the plate as a solid slab and rely on the ring/hang marks being printed as a shallow notch is out of scope —
-    // ship a solid slab (still fully usable for a keyring by drilling, and we DO add a real hole using two half-slabs + a cylinder gap).
+    // flat rectangular plate (llavero / placa / imán). Ring/hang holes are cut as a
+    // gap-band in the slab (no CSG needed) when the format declares hasHole; imán
+    // ships as a plain solid slab (magnet glues to the back, no hole needed).
     const t = fmt.thickness;
     const w = face.faceWidth, h = face.faceHeight;
-    const x0 = -w / 2, x1 = w / 2, y0 = 0, y1 = h, z0 = 0, z1 = t;
-    const uDir = [1,0,0], vDir=[0,1,0], nDir=[0,0,1];
-    // whole slab as one oriented box, then we "cut" the hole by leaving a gap: build slab in two v-bands around the hole row when present
-    const holeR = state.format === "llavero" ? fmt.ringHoleMM / 2 : fmt.hangHoleMM / 2;
-    const holeY = h - (state.format === "llavero" ? fmt.ringHoleMM + 2 : fmt.hangHoleMM + 2);
-    const bandGap = holeR * 2 + 1.2;
-    if (holeY > y0 + bandGap && holeY < y1 - 0.1) {
-      addOrientedBox(soup, [x0,0,0], uDir, vDir, nDir, 0, w, y0, holeY - bandGap/2, z0, z1);
-      addOrientedBox(soup, [x0,0,0], uDir, vDir, nDir, 0, w, holeY + bandGap/2, y1, z0, z1);
-      // side pillars to keep the plate joined around the hole (left/right of hole gap)
-      const holeX0 = w/2 - (state.format === 'placa' ? w*0.32 : 0) - holeR - 0.6;
-      // simplification: for llavero (single centered hole) just leave the gap band unfilled (creates a slot, still functional for a ring) 
-      if (state.format === 'placa') {
-        // two symmetric holes near corners: fill middle band fully, holes are visual markers only
-        addOrientedBox(soup, [x0,0,0], uDir, vDir, nDir, 0, w, holeY - bandGap/2, holeY + bandGap/2, z0, z1);
+    const x0 = -w / 2, y0 = 0, y1 = h, z0 = 0, z1 = t;
+    const uDir = [1, 0, 0], vDir = [0, 1, 0], nDir = [0, 0, 1];
+    if (fmt.hasHole) {
+      const holeSizeMM = fmt.ringHoleMM || fmt.hangHoleMM || 4;
+      const holeR = holeSizeMM / 2;
+      const holeY = h - (holeSizeMM + 2);
+      const bandGap = holeR * 2 + 1.2;
+      if (holeY > y0 + bandGap && holeY < y1 - 0.1) {
+        addOrientedBox(soup, [x0, 0, 0], uDir, vDir, nDir, 0, w, y0, holeY - bandGap / 2, z0, z1);
+        addOrientedBox(soup, [x0, 0, 0], uDir, vDir, nDir, 0, w, holeY + bandGap / 2, y1, z0, z1);
+        return soup;
       }
-    } else {
-      addOrientedBox(soup, [x0,0,0], uDir, vDir, nDir, 0, w, y0, y1, z0, z1);
     }
+    addOrientedBox(soup, [x0, 0, 0], uDir, vDir, nDir, 0, w, y0, y1, z0, z1);
     return soup;
   }
 
@@ -829,6 +916,17 @@
 
     $("#color-base").addEventListener("input", (e) => { state.colorBase = e.target.value; requestRebuild(); });
     $("#color-code").addEventListener("input", (e) => { state.colorCode = e.target.value; requestRebuild(); });
+    $("#color-code-2").addEventListener("input", (e) => { state.colorCode2 = e.target.value; requestRebuild(); });
+    $("#gradient-type").addEventListener("change", (e) => { state.gradientType = e.target.value; requestRebuild(); });
+
+    $$("[data-code-mode]").forEach(btn => btn.addEventListener("click", () => {
+      state.codeMode = btn.dataset.codeMode;
+      $$("[data-code-mode]").forEach(b => { b.classList.toggle("is-active", b === btn); b.setAttribute("aria-selected", b === btn); });
+      $("[data-gradient-row]").hidden = state.codeMode !== "gradient";
+      requestRebuild();
+    }));
+
+    $("#frame-text").addEventListener("input", debounce((e) => { state.frameText = e.target.value; }, 150));
 
     $("#logo-upload").addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
@@ -887,6 +985,7 @@
     safe(mountStyleGrid, "mountStyleGrid");
     safe(mountColorPresets, "mountColorPresets");
     safe(mountEmojiPicker, "mountEmojiPicker");
+    safe(mountFrameGrid, "mountFrameGrid");
     safe(initControls, "initControls");
     safe(renderQR2D, "renderQR2D");
     safe(renderWarnings, "renderWarnings");

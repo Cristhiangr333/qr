@@ -19,7 +19,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap">
 
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=20260831">
+<link rel="stylesheet" href="styles.css?v=20260901">
 <!-- TODO: si activas Google AdSense, añade aquí el script de tu CMP (banner de consentimiento de cookies) antes de activar los anuncios -->
 
 <script type="importmap">
@@ -125,6 +125,20 @@
               <label>Base <input type="color" id="color-base" value="#F4F1EA"></label>
               <label>Código <input type="color" id="color-code" value="#1B1B22"></label>
             </div>
+            <div class="segmented segmented-sm" role="tablist" aria-label="Relleno del código">
+              <button type="button" class="seg-btn is-active" data-code-mode="solid" role="tab" aria-selected="true">Sólido</button>
+              <button type="button" class="seg-btn" data-code-mode="gradient" role="tab" aria-selected="false">Degradado</button>
+            </div>
+            <div class="gradient-row" data-gradient-row hidden>
+              <label>2º color <input type="color" id="color-code-2" value="#D9622B"></label>
+              <label class="gradient-type-label">
+                Forma
+                <select id="gradient-type" class="text-input text-input-sm">
+                  <option value="linear" selected>Lineal</option>
+                  <option value="radial">Radial</option>
+                </select>
+              </label>
+            </div>
             <p class="hint" data-contrast-hint></p>
           </div>
 
@@ -140,6 +154,12 @@
             </div>
           </div>
 
+          <div class="field-group">
+            <span class="field-label">Marco (solo en la descarga PNG)</span>
+            <div class="segmented segmented-wrap" data-frame-grid></div>
+            <input id="frame-text" class="text-input" type="text" maxlength="24" placeholder="ESCANÉAME" value="ESCANÉAME" hidden>
+          </div>
+
           <hr class="divider">
 
           <div class="field-group">
@@ -153,6 +173,15 @@
               </button>
               <button type="button" class="format-btn" data-format="placa">
                 <span class="format-icon">🖼️</span><span>Placa de pared</span>
+              </button>
+              <button type="button" class="format-btn" data-format="iman">
+                <span class="format-icon">🧲</span><span>Imán</span>
+              </button>
+              <button type="button" class="format-btn" data-format="posavasos">
+                <span class="format-icon">🥤</span><span>Posavasos</span>
+              </button>
+              <button type="button" class="format-btn" data-format="placa-redonda">
+                <span class="format-icon">🔘</span><span>Placa redonda</span>
               </button>
             </div>
           </div>
@@ -254,6 +283,6 @@
 <script defer src="lib/vendor/qr-code-styling.js"></script>
 <script defer src="lib/vendor/jszip.min.js"></script>
 <script defer src="lib/manifest.js"></script>
-<script defer src="main.js?v=20260831"></script>
+<script defer src="main.js?v=20260901"></script>
 </body>
 </html>
