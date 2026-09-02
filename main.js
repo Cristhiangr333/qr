@@ -411,21 +411,17 @@
     ctx.closePath();
   }
 
-  function applyShapeClip(canvas, shape) {
-    if (!shape || shape === "cuadrado") return;
-    const ctx = canvas.getContext("2d");
-    const s = canvas.width;
-    ctx.globalCompositeOperation = "destination-in";
-    if (shape === "circular") { ctx.beginPath(); ctx.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2); }
-    else if (shape === "redondeado") roundRectPath(ctx, 0, 0, s, s, s * 0.09);
-    else if (shape === "hexagonal") hexPath(ctx, s);
-    ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
+  function shapePath(ctx, size, shape) {
+    if (shape === "circular") { ctx.beginPath(); ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); }
+    else if (shape === "redondeado") roundRectPath(ctx, 0, 0, size, size, size * 0.09);
+    else if (shape === "hexagonal") hexPath(ctx, size);
   }
 
   const SHAPE_PAD = { cuadrado: 1, redondeado: 1, circular: 1.45, hexagonal: 1.5 };
 
-  /* Builds the final QR canvas: pattern (if any) + shape clip (if any) + the QR itself, centered. */
+  /* Builds the final QR canvas: pattern (if any) + shape clip (if any) + the QR itself, centered.
+     The shape is clipped BEFORE anything is drawn (ctx.clip()), not masked afterwards via
+     destination-in — the latter leaves a faint anti-aliased ring artifact on Safari/macOS. */
   async function composeQRCanvas(sizePx) {
     const needsTransparentBg = state.bgPattern !== "ninguno";
     const opts = qrOptions(sizePx);
@@ -441,12 +437,15 @@
     c.width = c.height = canvasSize;
     const ctx = c.getContext("2d");
 
+    ctx.save();
+    if (state.bgShape && state.bgShape !== "cuadrado") { shapePath(ctx, canvasSize, state.bgShape); ctx.clip(); }
+
     if (state.bgPattern !== "ninguno") drawPattern(ctx, canvasSize, state.bgPattern, state.colorBase, state.colorCode);
     else if (pad > 1) { ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, canvasSize, canvasSize); }
 
     const off = (canvasSize - sizePx) / 2;
     ctx.drawImage(img, off, off, sizePx, sizePx);
-    applyShapeClip(c, state.bgShape);
+    ctx.restore();
     return c;
   }
 
@@ -479,7 +478,10 @@
     "marco-completo": { t: 0.09, b: 0.16, l: 0.09, r: 0.09 },
     "esquinas":       { t: 0.05, b: 0.1,  l: 0.05, r: 0.05 },
     "ticket":         { t: 0,    b: 0.2,  l: 0,    r: 0    },
-    "medalla":        { t: 0,    b: 0.05, l: 0,    r: 0.05 }
+    "medalla":        { t: 0,    b: 0.05, l: 0,    r: 0.05 },
+    "ventana":        { t: 0.15, b: 0.03, l: 0.03, r: 0.03 },
+    "recibo":         { t: 0.03, b: 0.24, l: 0.03, r: 0.03 },
+    "etiqueta":       { t: 0.18, b: 0.06, l: 0.06, r: 0.06 }
   };
   const BASE_PAD = 0.07;
 
@@ -504,10 +506,44 @@
     ctx.stroke(); ctx.restore();
   }
 
+  /* Shrinks font size until `text` fits inside maxWidth, so any CTA text (short or long)
+     always fits its container instead of overflowing or spilling outside the shape. */
+  function fitFontPx(ctx, text, maxWidth, startPx, minPx, weight, family) {
+    weight = weight || 800;
+    family = family || "Manrope, sans-serif";
+    let size = Math.round(startPx);
+    minPx = Math.max(8, Math.round(minPx || startPx * 0.4));
+    while (size > minPx) {
+      ctx.font = `${weight} ${size}px ${family}`;
+      if (ctx.measureText(text).width <= maxWidth) break;
+      size -= 1;
+    }
+    ctx.font = `${weight} ${size}px ${family}`;
+    return size;
+  }
+
+  /* Draws an emoji centered on (cx, cy) using its actual glyph bounding box instead of
+     textBaseline:'middle', which centers emoji inconsistently across platforms/fonts. */
+  function drawCenteredEmoji(ctx, emoji, cx, cy, px) {
+    ctx.save();
+    ctx.font = `${Math.round(px)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    let dy = 0;
+    try {
+      const m = ctx.measureText(emoji);
+      if (typeof m.actualBoundingBoxAscent === "number" && typeof m.actualBoundingBoxDescent === "number") {
+        dy = (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+      } else { dy = px * 0.36; } // fallback approximation when metrics are unavailable
+    } catch (_) { dy = px * 0.36; }
+    ctx.fillText(emoji, cx, cy + dy);
+    ctx.restore();
+  }
+
   function drawTextBar(ctx, x0, y0, w, h, text, withArrowDir) {
     ctx.fillStyle = state.colorCode; ctx.fillRect(x0, y0, w, h);
     ctx.fillStyle = state.colorBase;
-    ctx.font = `800 ${Math.round(h * 0.4)}px Manrope, sans-serif`;
+    fitFontPx(ctx, text, w * 0.9, h * 0.4, h * 0.16);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(text, x0 + w / 2, y0 + h / 2);
     if (withArrowDir) {
@@ -548,7 +584,7 @@
         ctx.strokeRect(-ribbonW / 2, -ribbonW * 0.13, ribbonW, ribbonW * 0.26);
       }
       ctx.fillStyle = base;
-      ctx.font = `800 ${Math.round(ribbonW * 0.16)}px Manrope, sans-serif`;
+      fitFontPx(ctx, text, ribbonW * 0.82, ribbonW * 0.16, ribbonW * 0.06);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(text, 0, 1);
       ctx.restore();
@@ -561,7 +597,8 @@
       if (border !== "solido") { ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.6; ctx.setLineDash(border === "punteado" ? [edgeW, edgeW * 1.3] : []); ctx.stroke(); }
       const tailH = bh * 0.5;
       ctx.beginPath(); ctx.moveTo(W / 2 - tailH * 0.6, by); ctx.lineTo(W / 2 + tailH * 0.6, by); ctx.lineTo(W / 2, by - tailH); ctx.closePath(); ctx.fillStyle = code; ctx.fill();
-      ctx.fillStyle = base; ctx.font = `800 ${Math.round(bh * 0.42)}px Manrope, sans-serif`;
+      ctx.fillStyle = base;
+      fitFontPx(ctx, text, bw * 0.86, bh * 0.42, bh * 0.16);
       ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, W / 2, by + bh / 2 + 1);
     } else if (layout === "marco-completo") {
       if (border === "solido") {
@@ -577,7 +614,7 @@
       ctx.fillStyle = border === "solido" ? base : code;
       roundRectPath(ctx, chipX, chipY, chipW, chipH * 0.55, chipH * 0.2); ctx.fill();
       ctx.fillStyle = border === "solido" ? code : base;
-      ctx.font = `800 ${Math.round(chipH * 0.3)}px Manrope, sans-serif`;
+      fitFontPx(ctx, text, chipW * 0.86, chipH * 0.3, chipH * 0.12);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(text, chipX + chipW / 2, chipY + chipH * 0.275);
     } else if (layout === "esquinas") {
@@ -591,7 +628,8 @@
         ctx.stroke();
       });
       if (state.frameText) {
-        ctx.fillStyle = code; ctx.font = `700 ${Math.round((H - (iy + s)) * 0.4)}px Manrope, sans-serif`;
+        ctx.fillStyle = code;
+        fitFontPx(ctx, text, W * 0.86, (H - (iy + s)) * 0.4, (H - (iy + s)) * 0.15, 700);
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(text, W / 2, iy + s + (H - (iy + s)) / 2);
       }
@@ -605,7 +643,8 @@
       ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.8;
       ctx.setLineDash([edgeW * (border === "punteado" ? 0.8 : 1.6), edgeW * 1.4]);
       ctx.beginPath(); ctx.moveTo(W * 0.08, tearY); ctx.lineTo(W * 0.92, tearY); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = base; ctx.font = `800 ${Math.round(bandH * 0.24)}px Manrope, sans-serif`;
+      ctx.fillStyle = base;
+      fitFontPx(ctx, text, W * 0.86, bandH * 0.24, bandH * 0.1);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(text, W / 2, tearY + (H - tearY) / 2);
     } else if (layout === "medalla") {
@@ -626,10 +665,61 @@
         if (border === "punteado") { ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.8; ctx.setLineDash([edgeW, edgeW * 1.2]); ctx.beginPath(); ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2); ctx.stroke(); }
       }
       ctx.fillStyle = base;
-      ctx.font = `800 ${Math.round(r * 0.34)}px Manrope, sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
       const words = text.split(" ").slice(0, 2);
+      const longest = words.reduce((a, b) => (a.length >= b.length ? a : b), "");
+      const maxLineW = words.length > 1 ? r * 1.5 : r * 1.7;
+      fitFontPx(ctx, longest, maxLineW, r * 0.34, r * 0.13);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
       words.forEach((w, i) => ctx.fillText(w, cx, cy + (i - (words.length - 1) / 2) * r * 0.4));
+    } else if (layout === "ventana") {
+      // browser/computer-window chrome: title bar with traffic-light dots + address pill
+      ctx.strokeStyle = code; ctx.lineWidth = edgeW;
+      ctx.setLineDash(border === "punteado" ? [edgeW, edgeW * 1.3] : []);
+      if (border === "ondulado") {
+        ctx.beginPath(); waveHLine(ctx, 1, W - 1, 1, edgeW, W / 10); waveHLine(ctx, 1, W - 1, H - 1, edgeW, W / 10);
+        waveVLine(ctx, 1, H - 1, 1, edgeW, H / 8); waveVLine(ctx, 1, H - 1, W - 1, edgeW, H / 8); ctx.stroke();
+      } else { ctx.strokeRect(1, 1, W - 2, H - 2); }
+      ctx.setLineDash([]);
+      ctx.fillStyle = code; ctx.fillRect(0, 0, W, iy);
+      const dotR = iy * 0.16, dotY = iy / 2;
+      ["#EF5B4E", "#F5BD4F", "#61C454"].forEach((clr, i) => {
+        ctx.fillStyle = clr; ctx.beginPath(); ctx.arc(iy * 0.55 + i * dotR * 2.6, dotY, dotR, 0, Math.PI * 2); ctx.fill();
+      });
+      const pillX = iy * 1.7, pillW = W - pillX - iy * 0.4, pillH = iy * 0.5;
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      roundRectPath(ctx, pillX, dotY - pillH / 2, pillW, pillH, pillH / 2); ctx.fill();
+      ctx.fillStyle = base;
+      fitFontPx(ctx, text, pillW * 0.86, pillH * 0.46, pillH * 0.2, 700);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, pillX + pillW / 2, dotY + 1);
+    } else if (layout === "recibo") {
+      // shopping receipt: torn zigzag line + monospaced text, evokes a printed ticket
+      const bandY = iy + s + (H - (iy + s)) * 0.18;
+      ctx.strokeStyle = code; ctx.lineWidth = Math.max(1.5, edgeW * 0.7); ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      const teeth = 22, toothW = W * 0.9 / teeth, zx0 = W * 0.05;
+      ctx.moveTo(zx0, bandY);
+      for (let i = 0; i < teeth; i++) ctx.lineTo(zx0 + (i + 0.5) * toothW, bandY + (i % 2 === 0 ? -1 : 1) * s * 0.012);
+      ctx.lineTo(zx0 + teeth * toothW, bandY);
+      ctx.stroke();
+      ctx.fillStyle = code;
+      fitFontPx(ctx, text, W * 0.84, (H - bandY) * 0.32, (H - bandY) * 0.12, 700, "'Courier New', monospace");
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, bandY + (H - bandY) * 0.55);
+    } else if (layout === "etiqueta") {
+      const holeR = s * 0.05, holeCX = W / 2, holeCY = iy * 0.42;
+      ctx.strokeStyle = code; ctx.lineWidth = edgeW * 1.3;
+      ctx.beginPath(); ctx.arc(holeCX, holeR * 1.6, holeR * 2.2, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
+      ctx.fillStyle = state.colorBase; ctx.beginPath(); ctx.arc(holeCX, holeCY, holeR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = code; ctx.lineWidth = Math.max(1.5, edgeW * 0.8);
+      ctx.setLineDash(border === "punteado" ? [edgeW, edgeW * 1.2] : []);
+      if (border === "ondulado") { ctx.beginPath(); const teeth = 16; for (let i2 = 0; i2 <= teeth; i2++) { const a = (i2 / teeth) * Math.PI * 2; const rr = holeR * (1 + (i2 % 2 === 0 ? 0.1 : 0)); const x = holeCX + Math.cos(a) * rr, y = holeCY + Math.sin(a) * rr; if (i2 === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.stroke(); }
+      else { ctx.beginPath(); ctx.arc(holeCX, holeCY, holeR, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.setLineDash([]);
+      ctx.fillStyle = code;
+      fitFontPx(ctx, text, W * 0.82, iy * 0.26, iy * 0.1, 800);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, iy * 0.82);
     }
   }
 
@@ -641,10 +731,8 @@
     ctx.fillStyle = state.colorBase;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = state.colorCode; ctx.lineWidth = Math.max(1, r * 0.08); ctx.stroke();
-    ctx.font = `${Math.round(r * 1.15)}px sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(preset.emoji, cx, cy + r * 0.05);
     ctx.restore();
+    drawCenteredEmoji(ctx, preset.emoji, cx, cy, r * 1.15);
   }
 
   /* Composes the frame (layout + border + corner icon) around an already-built QR canvas. */
