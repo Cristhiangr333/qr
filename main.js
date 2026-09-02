@@ -30,7 +30,9 @@
     center: { type: null, value: null }, // type: 'emoji'|'logo'
     bgShape: "cuadrado", // 'cuadrado' | 'redondeado' | 'circular' | 'hexagonal'
     bgPattern: "ninguno", // 'ninguno' | 'puntos' | 'rayas' | 'cuadros' | 'olas' | 'confeti'
-    frame: "ninguno", // 'ninguno' | 'barra-arriba' | 'barra-abajo' | 'cinta-esquina' | 'burbuja'
+    frame: "ninguno", // 10 layouts (see BRAND.framePresets)
+    frameBorder: "solido", // 'solido' | 'punteado' | 'ondulado'
+    frameIcon: "ninguno", // BRAND.frameIcons key
     frameText: "ESCANÉAME",
     format: "soporte",
     objectText: ""
@@ -127,7 +129,7 @@
       const active = state.frame !== "ninguno";
       $("#frame-text").hidden = !active;
       $("[data-cta-chips]").hidden = !active;
-      updateFramePreview();
+      requestRebuild();
     }));
   }
 
@@ -139,24 +141,34 @@
       state.frameText = btn.dataset.cta;
       $("#frame-text").value = state.frameText;
       $$("[data-cta]", el).forEach(b => b.classList.toggle("is-active", b === btn));
-      updateFramePreview();
+      requestRebuild();
     }));
   }
 
-  function updateFramePreview() {
-    const root = $("[data-frame-root]");
-    if (!root) return;
-    $$("[data-frame-el]", root).forEach(el => {
-      const isActive = el.dataset.frameEl === state.frame;
-      el.hidden = !isActive;
-      if (isActive) {
-        el.style.background = state.colorCode;
-        el.style.color = state.colorBase;
-        const tail = $(".frame-bubble-tail", el);
-        if (tail) tail.style.borderBottomColor = state.colorCode;
-      }
-    });
-    $$("[data-frame-text-el]", root).forEach(el => { el.textContent = state.frameText || "ESCANÉAME"; });
+  function mountBorderGrid() {
+    const el = $("[data-border-grid]");
+    if (!el || el.children.length || !BRAND.frameBorders) return;
+    el.innerHTML = BRAND.frameBorders.map((b, i) => `
+      <button type="button" class="mini-btn${i === 0 ? " is-active" : ""}" data-border="${b.key}" title="${escHTML(b.label)}">${b.icon}</button>
+    `).join("");
+    $$("[data-border]", el).forEach(btn => btn.addEventListener("click", () => {
+      state.frameBorder = btn.dataset.border;
+      $$("[data-border]", el).forEach(b => b.classList.toggle("is-active", b === btn));
+      requestRebuild();
+    }));
+  }
+
+  function mountIconGrid() {
+    const el = $("[data-icon-grid]");
+    if (!el || el.children.length || !BRAND.frameIcons) return;
+    el.innerHTML = BRAND.frameIcons.map((ic, i) => `
+      <button type="button" class="mini-btn${i === 0 ? " is-active" : ""}" data-icon="${ic.key}" title="${escHTML(ic.label)}">${ic.emoji || "—"}</button>
+    `).join("");
+    $$("[data-icon]", el).forEach(btn => btn.addEventListener("click", () => {
+      state.frameIcon = btn.dataset.icon;
+      $$("[data-icon]", el).forEach(b => b.classList.toggle("is-active", b === btn));
+      requestRebuild();
+    }));
   }
 
   function mountShapeGrid() {
@@ -210,6 +222,8 @@
     state.codeMode = "solid";
     state.frame = t.frame;
     state.frameText = t.frameText;
+    state.frameBorder = "solido";
+    state.frameIcon = "ninguno";
     state.bgShape = t.shape;
     state.bgPattern = t.pattern;
 
@@ -219,6 +233,8 @@
     $$("[data-shape]").forEach(b => b.classList.toggle("is-active", b.dataset.shape === t.shape));
     $$("[data-pattern]").forEach(b => b.classList.toggle("is-active", b.dataset.pattern === t.pattern));
     $$("[data-frame]").forEach(b => b.classList.toggle("is-active", b.dataset.frame === t.frame));
+    $$("[data-border]").forEach(b => b.classList.toggle("is-active", b.dataset.border === "solido"));
+    $$("[data-icon]").forEach(b => b.classList.toggle("is-active", b.dataset.icon === "ninguno"));
     $$("[data-code-mode]").forEach(b => b.classList.toggle("is-active", b.dataset.codeMode === "solid"));
     $("[data-gradient-row]").hidden = true;
     $("#color-base").value = t.base;
@@ -443,112 +459,229 @@
     const host = $("[data-qr-preview]");
     if (!host || !window.QRCodeStyling) return;
     const myGen = ++renderGen;
-    const canvas = await composeQRCanvas(260);
+    const canvas = await composeFinalCanvas(260);
     if (myGen !== renderGen) return; // a newer render started meanwhile
     host.innerHTML = "";
     host.appendChild(canvas);
   }
 
-  async function drawFrame(qrBlob) {
-    const qrDataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(qrBlob); });
-    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = qrDataUrl; });
-    const text = state.frameText || "ESCANÉAME";
+  /* ---------------------------------------------------------------------
+   * Frame layer: 10 layouts × 3 border styles × 7 corner icons, all drawn
+   * on top of the composed QR canvas (pattern+shape+code already baked in).
+   * ------------------------------------------------------------------- */
+  const LAYOUT_MARGINS = {
+    "ninguno":        { t: 0,    b: 0,    l: 0,    r: 0    },
+    "barra-arriba":   { t: 0.16, b: 0,    l: 0,    r: 0    },
+    "barra-abajo":    { t: 0,    b: 0.16, l: 0,    r: 0    },
+    "doble-barra":    { t: 0.14, b: 0.14, l: 0,    r: 0    },
+    "cinta-esquina":  { t: 0.1,  b: 0,    l: 0,    r: 0.1  },
+    "burbuja":        { t: 0,    b: 0.17, l: 0,    r: 0    },
+    "marco-completo": { t: 0.09, b: 0.16, l: 0.09, r: 0.09 },
+    "esquinas":       { t: 0.05, b: 0.1,  l: 0.05, r: 0.05 },
+    "ticket":         { t: 0,    b: 0.2,  l: 0,    r: 0    },
+    "medalla":        { t: 0,    b: 0.05, l: 0,    r: 0.05 }
+  };
+  const BASE_PAD = 0.07;
 
-    if (state.frame === "barra-arriba" || state.frame === "barra-abajo") {
-      const pad = Math.round(img.width * 0.06);
-      const barH = Math.round(img.width * 0.16);
-      const c = document.createElement("canvas");
-      c.width = img.width + pad * 2;
-      c.height = img.height + pad * 2 + barH;
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, c.width, c.height);
-      const barY = state.frame === "barra-arriba" ? 0 : c.height - barH;
-      const qrY = state.frame === "barra-arriba" ? barH + pad : pad;
-      ctx.fillStyle = state.colorCode; ctx.fillRect(0, barY, c.width, barH);
-      ctx.fillStyle = state.colorBase;
-      ctx.font = `800 ${Math.round(barH * 0.4)}px Manrope, sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(text, c.width / 2, barY + barH / 2);
-      const ax = c.width / 2, arrowH = Math.round(barH * 0.22);
-      const ay = state.frame === "barra-arriba" ? barY + barH - 2 : barY + 2;
-      const dir = state.frame === "barra-arriba" ? 1 : -1;
-      ctx.beginPath(); ctx.moveTo(ax - arrowH, ay); ctx.lineTo(ax + arrowH, ay); ctx.lineTo(ax, ay + arrowH * dir); ctx.closePath(); ctx.fill();
-      ctx.drawImage(img, pad, qrY, img.width, img.height);
-      return new Promise((res) => c.toBlob(res, "image/png"));
+  function waveHLine(ctx, x0, x1, y, amp, wl) {
+    ctx.moveTo(x0, y);
+    for (let x = x0; x <= x1; x += 3) ctx.lineTo(x, y + Math.sin(((x - x0) / wl) * Math.PI * 2) * amp);
+  }
+  function waveVLine(ctx, y0, y1, x, amp, wl) {
+    ctx.moveTo(x, y0);
+    for (let y = y0; y <= y1; y += 3) ctx.lineTo(x + Math.sin(((y - y0) / wl) * Math.PI * 2) * amp, y);
+  }
+  function strokeHEdge(ctx, x0, x1, y, style, color, w) {
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath();
+    if (style === "ondulado") waveHLine(ctx, x0, x1, y, w * 1.8, Math.max((x1 - x0) / 8, 10));
+    else { ctx.setLineDash(style === "punteado" ? [w * 1.4, w * 1.6] : []); ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
+    ctx.stroke(); ctx.restore();
+  }
+  function strokeVEdge(ctx, y0, y1, x, style, color, w) {
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath();
+    if (style === "ondulado") waveVLine(ctx, y0, y1, x, w * 1.8, Math.max((y1 - y0) / 8, 10));
+    else { ctx.setLineDash(style === "punteado" ? [w * 1.4, w * 1.6] : []); ctx.moveTo(x, y0); ctx.lineTo(x, y1); }
+    ctx.stroke(); ctx.restore();
+  }
+
+  function drawTextBar(ctx, x0, y0, w, h, text, withArrowDir) {
+    ctx.fillStyle = state.colorCode; ctx.fillRect(x0, y0, w, h);
+    ctx.fillStyle = state.colorBase;
+    ctx.font = `800 ${Math.round(h * 0.4)}px Manrope, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, x0 + w / 2, y0 + h / 2);
+    if (withArrowDir) {
+      const ax = x0 + w / 2, arrowH = Math.round(h * 0.22);
+      const ay = withArrowDir > 0 ? y0 + h - 2 : y0 + 2;
+      ctx.beginPath(); ctx.moveTo(ax - arrowH, ay); ctx.lineTo(ax + arrowH, ay); ctx.lineTo(ax, ay + arrowH * withArrowDir); ctx.closePath(); ctx.fill();
     }
+  }
 
-    if (state.frame === "cinta-esquina") {
-      const pad = Math.round(img.width * 0.12);
-      const c = document.createElement("canvas");
-      c.width = img.width + pad * 2; c.height = img.height + pad * 2;
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, pad, pad, img.width, img.height);
-      const ribbonW = c.width * 0.62;
+  function drawLayoutDecoration(ctx, layout, g) {
+    const { W, H, s, ix, iy } = g;
+    const text = state.frameText || "ESCANÉAME";
+    const border = state.frameBorder;
+    const code = state.colorCode, base = state.colorBase;
+    const edgeW = Math.max(2, s * 0.012);
+
+    if (layout === "barra-arriba") {
+      drawTextBar(ctx, 0, 0, W, iy, text, 1);
+      strokeHEdge(ctx, 0, W, iy, border, code, edgeW);
+    } else if (layout === "barra-abajo") {
+      drawTextBar(ctx, 0, iy + s, W, H - (iy + s), text, -1);
+      strokeHEdge(ctx, 0, W, iy + s, border, code, edgeW);
+    } else if (layout === "doble-barra") {
+      drawTextBar(ctx, 0, 0, W, iy, text, 1);
+      strokeHEdge(ctx, 0, W, iy, border, code, edgeW);
+      drawTextBar(ctx, 0, iy + s, W, H - (iy + s), "ESCANÉAME", -1);
+      strokeHEdge(ctx, 0, W, iy + s, border, code, edgeW);
+    } else if (layout === "cinta-esquina") {
+      const ribbonW = s * 0.66;
       ctx.save();
-      ctx.translate(c.width - pad * 0.35, pad * 0.75);
+      ctx.translate(ix + s - s * 0.02, iy + s * 0.22);
       ctx.rotate(Math.PI / 4);
-      ctx.fillStyle = state.colorCode;
+      ctx.fillStyle = code;
       ctx.fillRect(-ribbonW / 2, -ribbonW * 0.13, ribbonW, ribbonW * 0.26);
-      ctx.fillStyle = state.colorBase;
+      if (border !== "solido") {
+        ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.7;
+        ctx.setLineDash(border === "punteado" ? [edgeW, edgeW * 1.3] : []);
+        ctx.strokeRect(-ribbonW / 2, -ribbonW * 0.13, ribbonW, ribbonW * 0.26);
+      }
+      ctx.fillStyle = base;
       ctx.font = `800 ${Math.round(ribbonW * 0.16)}px Manrope, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(text, 0, 1);
       ctx.restore();
-      return new Promise((res) => c.toBlob(res, "image/png"));
-    }
-
-    if (state.frame === "burbuja") {
-      const pad = Math.round(img.width * 0.06);
-      const bubbleH = Math.round(img.width * 0.14);
-      const gap = Math.round(img.width * 0.06);
-      const c = document.createElement("canvas");
-      c.width = img.width + pad * 2; c.height = img.height + pad * 2 + bubbleH + gap;
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, pad, pad, img.width, img.height);
-      const bw = img.width * 0.68, bx = c.width / 2 - bw / 2, by = pad + img.height + gap;
-      const r = bubbleH / 2;
-      ctx.fillStyle = state.colorCode;
+    } else if (layout === "burbuja") {
+      const bw = s * 0.68, bh = (H - (iy + s)) * 0.55, bx = W / 2 - bw / 2, by = iy + s + (H - (iy + s)) * 0.28, r = bh / 2;
+      ctx.fillStyle = code;
       ctx.beginPath();
-      ctx.moveTo(bx + r, by);
-      ctx.arcTo(bx + bw, by, bx + bw, by + bubbleH, r);
-      ctx.arcTo(bx + bw, by + bubbleH, bx, by + bubbleH, r);
-      ctx.arcTo(bx, by + bubbleH, bx, by, r);
-      ctx.arcTo(bx, by, bx + bw, by, r);
-      ctx.closePath(); ctx.fill();
-      const tailX = c.width / 2, tailH = gap * 0.7;
-      ctx.beginPath();
-      ctx.moveTo(tailX - tailH * 0.6, by);
-      ctx.lineTo(tailX + tailH * 0.6, by);
-      ctx.lineTo(tailX, by - tailH);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = state.colorBase;
-      ctx.font = `800 ${Math.round(bubbleH * 0.42)}px Manrope, sans-serif`;
+      ctx.moveTo(bx + r, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, r); ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+      ctx.arcTo(bx, by + bh, bx, by, r); ctx.arcTo(bx, by, bx + bw, by, r); ctx.closePath(); ctx.fill();
+      if (border !== "solido") { ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.6; ctx.setLineDash(border === "punteado" ? [edgeW, edgeW * 1.3] : []); ctx.stroke(); }
+      const tailH = bh * 0.5;
+      ctx.beginPath(); ctx.moveTo(W / 2 - tailH * 0.6, by); ctx.lineTo(W / 2 + tailH * 0.6, by); ctx.lineTo(W / 2, by - tailH); ctx.closePath(); ctx.fillStyle = code; ctx.fill();
+      ctx.fillStyle = base; ctx.font = `800 ${Math.round(bh * 0.42)}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, W / 2, by + bh / 2 + 1);
+    } else if (layout === "marco-completo") {
+      if (border === "solido") {
+        ctx.save(); ctx.fillStyle = code;
+        ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(ix, iy, s, s); ctx.fill("evenodd"); ctx.restore();
+      } else {
+        strokeHEdge(ctx, 0, W, 2, border, code, edgeW * 1.4);
+        strokeHEdge(ctx, 0, W, H - 2, border, code, edgeW * 1.4);
+        strokeVEdge(ctx, 0, H, 2, border, code, edgeW * 1.4);
+        strokeVEdge(ctx, 0, H, W - 2, border, code, edgeW * 1.4);
+      }
+      const chipH = H - (iy + s), chipW = s * 0.6, chipX = W / 2 - chipW / 2, chipY = iy + s + (chipH - chipH * 0.55) / 2;
+      ctx.fillStyle = border === "solido" ? base : code;
+      roundRectPath(ctx, chipX, chipY, chipW, chipH * 0.55, chipH * 0.2); ctx.fill();
+      ctx.fillStyle = border === "solido" ? code : base;
+      ctx.font = `800 ${Math.round(chipH * 0.3)}px Manrope, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(text, c.width / 2, by + bubbleH / 2 + 1);
-      return new Promise((res) => c.toBlob(res, "image/png"));
+      ctx.fillText(text, chipX + chipW / 2, chipY + chipH * 0.275);
+    } else if (layout === "esquinas") {
+      const L = s * 0.14;
+      const corners = [[ix, iy, 1, 1], [ix + s, iy, -1, 1], [ix, iy + s, 1, -1], [ix + s, iy + s, -1, -1]];
+      corners.forEach(([cx, cy, dx, dy]) => {
+        ctx.beginPath(); ctx.strokeStyle = code; ctx.lineWidth = edgeW * 1.6; ctx.lineCap = "round";
+        ctx.setLineDash(border === "punteado" ? [edgeW, edgeW * 1.4] : []);
+        if (border === "ondulado") { waveHLine(ctx, cx, cx + L * dx, cy, edgeW * 1.4, L / 2); waveVLine(ctx, cy, cy + L * dy, cx, edgeW * 1.4, L / 2); }
+        else { ctx.moveTo(cx + L * dx, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + L * dy); }
+        ctx.stroke();
+      });
+      if (state.frameText) {
+        ctx.fillStyle = code; ctx.font = `700 ${Math.round((H - (iy + s)) * 0.4)}px Manrope, sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(text, W / 2, iy + s + (H - (iy + s)) / 2);
+      }
+    } else if (layout === "ticket") {
+      const bandY = iy + s, bandH = H - bandY, bites = 14, biteR = W / bites / 2;
+      ctx.fillStyle = code;
+      ctx.beginPath(); ctx.moveTo(0, bandY);
+      for (let i = 0; i < bites; i++) { const cx = biteR + i * biteR * 2; ctx.arc(cx, bandY, biteR, Math.PI, 0, true); }
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+      const tearY = bandY + bandH * 0.42;
+      ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.8;
+      ctx.setLineDash([edgeW * (border === "punteado" ? 0.8 : 1.6), edgeW * 1.4]);
+      ctx.beginPath(); ctx.moveTo(W * 0.08, tearY); ctx.lineTo(W * 0.92, tearY); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = base; ctx.font = `800 ${Math.round(bandH * 0.24)}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, tearY + (H - tearY) / 2);
+    } else if (layout === "medalla") {
+      const r = s * 0.15, cx = ix + s - s * 0.08, cy = iy + s - s * 0.08;
+      ctx.fillStyle = code;
+      if (border === "ondulado") {
+        ctx.beginPath();
+        const teeth = 14;
+        for (let i = 0; i <= teeth; i++) {
+          const a = (i / teeth) * Math.PI * 2;
+          const rr = r * (1 + (i % 2 === 0 ? 0.08 : -0.03));
+          const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        if (border === "punteado") { ctx.strokeStyle = base; ctx.lineWidth = edgeW * 0.8; ctx.setLineDash([edgeW, edgeW * 1.2]); ctx.beginPath(); ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2); ctx.stroke(); }
+      }
+      ctx.fillStyle = base;
+      ctx.font = `800 ${Math.round(r * 0.34)}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const words = text.split(" ").slice(0, 2);
+      words.forEach((w, i) => ctx.fillText(w, cx, cy + (i - (words.length - 1) / 2) * r * 0.4));
     }
+  }
 
-    return null;
+  function drawCornerIcon(ctx, W, H, s) {
+    const preset = (BRAND.frameIcons || []).find(f => f.key === state.frameIcon);
+    if (!preset || !preset.emoji) return;
+    const r = s * 0.075, cx = r + s * 0.02, cy = r + s * 0.02;
+    ctx.save();
+    ctx.fillStyle = state.colorBase;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = state.colorCode; ctx.lineWidth = Math.max(1, r * 0.08); ctx.stroke();
+    ctx.font = `${Math.round(r * 1.15)}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(preset.emoji, cx, cy + r * 0.05);
+    ctx.restore();
+  }
+
+  /* Composes the frame (layout + border + corner icon) around an already-built QR canvas. */
+  async function composeFinalCanvas(sizePx) {
+    const base = await composeQRCanvas(sizePx);
+    const layout = state.frame, hasIcon = state.frameIcon !== "ninguno";
+    if (layout === "ninguno" && !hasIcon) return base;
+
+    const m = LAYOUT_MARGINS[layout] || { t: 0, b: 0, l: 0, r: 0 };
+    let top = BASE_PAD + m.t, bottom = BASE_PAD + m.b, left = BASE_PAD + m.l, right = BASE_PAD + m.r;
+    if (hasIcon) { top = Math.max(top, BASE_PAD + 0.1); left = Math.max(left, BASE_PAD + 0.1); }
+
+    const s = base.width;
+    const W = Math.round(s * (1 + left + right)), H = Math.round(s * (1 + top + bottom));
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, W, H);
+    const ix = Math.round(s * left), iy = Math.round(s * top);
+    ctx.drawImage(base, ix, iy, s, s);
+    if (layout !== "ninguno") drawLayoutDecoration(ctx, layout, { W, H, s, ix, iy });
+    if (hasIcon) drawCornerIcon(ctx, W, H, s);
+    return c;
   }
 
   async function downloadImage(ext) {
     if (!window.QRCodeStyling) return;
     if (ext === "svg") {
-      // vector export stays a clean raw code (patterns/shapes are raster-only effects)
+      // vector export stays a clean raw code (patterns/shapes/frames are raster-only effects)
       const qr = new QRCodeStyling(qrOptions(1000));
       const blob = await qr.getRawData("svg");
       if (blob) { saveBlob(blob, `qr-${slugFromPayload()}.svg`); notifyDownloaded(); }
       return;
     }
-    const canvas = await composeQRCanvas(1000);
-    let blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    const canvas = await composeFinalCanvas(1000);
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
     if (!blob) return;
-    if (state.frame !== "ninguno") {
-      const framed = await drawFrame(blob);
-      if (framed) blob = framed;
-    }
     saveBlob(blob, `qr-${slugFromPayload()}.png`);
     notifyDownloaded();
   }
@@ -1150,7 +1283,6 @@
    * ------------------------------------------------------------------- */
   const requestRebuild = debounce(() => {
     safe(renderQR2D, "renderQR2D");
-    safe(updateFramePreview, "updateFramePreview");
     safe(renderWarnings, "renderWarnings");
     if (viewer.started) safe(() => rebuildViewerModel(false), "rebuildViewerModel");
   }, 130);
@@ -1210,7 +1342,7 @@
       requestRebuild();
     }));
 
-    $("#frame-text").addEventListener("input", debounce((e) => { state.frameText = e.target.value; updateFramePreview(); }, 150));
+    $("#frame-text").addEventListener("input", debounce((e) => { state.frameText = e.target.value; requestRebuild(); }, 150));
 
     $("#logo-upload").addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
@@ -1274,9 +1406,10 @@
     safe(mountEmojiPicker, "mountEmojiPicker");
     safe(mountFrameGrid, "mountFrameGrid");
     safe(mountCtaChips, "mountCtaChips");
+    safe(mountBorderGrid, "mountBorderGrid");
+    safe(mountIconGrid, "mountIconGrid");
     safe(initControls, "initControls");
     safe(renderQR2D, "renderQR2D");
-    safe(updateFramePreview, "updateFramePreview");
     safe(renderWarnings, "renderWarnings");
     safe(setupViewerVisibilityGuards, "setupViewerVisibilityGuards");
     safe(initDownloadDialog, "initDownloadDialog");
