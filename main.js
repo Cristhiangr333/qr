@@ -481,7 +481,12 @@
     "medalla":        { t: 0,    b: 0.05, l: 0,    r: 0.05 },
     "ventana":        { t: 0.15, b: 0.03, l: 0.03, r: 0.03 },
     "recibo":         { t: 0.03, b: 0.24, l: 0.03, r: 0.03 },
-    "etiqueta":       { t: 0.18, b: 0.06, l: 0.06, r: 0.06 }
+    "etiqueta":       { t: 0.18, b: 0.06, l: 0.06, r: 0.06 },
+    "sello-postal":   { t: 0.09, b: 0.09, l: 0.09, r: 0.09 },
+    "post-it":        { t: 0.07, b: 0.16, l: 0.05, r: 0.05 },
+    "banderin":       { t: 0.06, b: 0.16, l: 0.06, r: 0.06 },
+    "disco":          { t: 0.16, b: 0.16, l: 0.16, r: 0.16 },
+    "nube":           { t: 0,    b: 0.2,  l: 0.02, r: 0.02 }
   };
   const BASE_PAD = 0.07;
 
@@ -720,6 +725,77 @@
       fitFontPx(ctx, text, W * 0.82, iy * 0.26, iy * 0.1, 800);
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(text, W / 2, iy * 0.82);
+    } else if (layout === "sello-postal") {
+      // postage-stamp perforation: a ring of small bumps just inside the edge (decorative stroke,
+      // not an actual cut — safer across browsers and avoids the clip-artifact class of bug entirely)
+      ctx.save();
+      ctx.strokeStyle = code; ctx.lineWidth = Math.max(1.5, edgeW * 0.9); ctx.setLineDash([]);
+      const bite = Math.min(W, H) * 0.028, inset = bite * 1.6;
+      const nx = Math.max(3, Math.round(W / (bite * 2.4))), ny = Math.max(3, Math.round(H / (bite * 2.4)));
+      const dotRow = (y) => { for (let i = 0; i <= nx; i++) { ctx.beginPath(); ctx.arc(inset + (i * (W - inset * 2)) / nx, y, bite * 0.5, 0, Math.PI * 2); ctx.stroke(); } };
+      const dotCol = (x) => { for (let i = 0; i <= ny; i++) { ctx.beginPath(); ctx.arc(x, inset + (i * (H - inset * 2)) / ny, bite * 0.5, 0, Math.PI * 2); ctx.stroke(); } };
+      dotRow(inset); dotRow(H - inset); dotCol(inset); dotCol(W - inset);
+      ctx.strokeStyle = code; ctx.lineWidth = Math.max(1, edgeW * 0.5);
+      ctx.setLineDash([edgeW, edgeW * 1.4]);
+      ctx.strokeRect(inset * 1.8, inset * 1.8, W - inset * 3.6, H - inset * 3.6);
+      ctx.restore();
+      if (state.frameText) {
+        ctx.fillStyle = code;
+        fitFontPx(ctx, text, W * 0.6, iy * 0.3, iy * 0.12, 700);
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(text, W / 2, H - iy * 0.42);
+      }
+    } else if (layout === "post-it") {
+      // sticky note: two tape strips + a folded bottom-right corner
+      ctx.save();
+      ctx.fillStyle = hexToRgba(code, 0.5);
+      ctx.save(); ctx.translate(W * 0.24, iy * 0.4); ctx.rotate(-0.12); ctx.fillRect(-W * 0.09, -iy * 0.22, W * 0.18, iy * 0.44); ctx.restore();
+      ctx.save(); ctx.translate(W * 0.76, iy * 0.4); ctx.rotate(0.1); ctx.fillRect(-W * 0.09, -iy * 0.22, W * 0.18, iy * 0.44); ctx.restore();
+      const foldSize = Math.min(W, H) * 0.1;
+      ctx.fillStyle = hexToRgba(code, 0.18);
+      ctx.beginPath(); ctx.moveTo(W - foldSize, H); ctx.lineTo(W, H); ctx.lineTo(W, H - foldSize); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = hexToRgba(code, 0.4); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(W - foldSize, H); ctx.lineTo(W, H - foldSize); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = code;
+      const potSize = fitFontPx(ctx, text, W * 0.78, (H - (iy + s)) * 0.34, (H - (iy + s)) * 0.14, 700);
+      ctx.font = `italic 700 ${potSize}px Manrope, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, iy + s + (H - (iy + s)) / 2);
+    } else if (layout === "banderin") {
+      ctx.strokeStyle = code; ctx.lineWidth = Math.max(2, edgeW * 1.4);
+      ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, -H * 0.05); ctx.stroke();
+      ctx.beginPath(); ctx.arc(W / 2, -H * 0.06, H * 0.02, 0, Math.PI * 2); ctx.fillStyle = code; ctx.fill();
+      ctx.fillStyle = code;
+      fitFontPx(ctx, text, W * 0.72, (H - (iy + s)) * 0.5, (H - (iy + s)) * 0.16, 800);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, iy + s + (H - (iy + s)) * 0.42);
+    } else if (layout === "disco") {
+      const cx = W / 2, cy = H / 2, rMax = Math.min(W, H) / 2;
+      ctx.strokeStyle = hexToRgba(code, 0.35);
+      for (let rr = s / 2 + 6; rr < rMax - 4; rr += Math.max(3, (rMax - s / 2) / 7)) {
+        ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.strokeStyle = code; ctx.lineWidth = edgeW; ctx.beginPath(); ctx.arc(cx, cy, rMax - 2, 0, Math.PI * 2); ctx.stroke();
+      if (state.frameText) {
+        ctx.fillStyle = code;
+        fitFontPx(ctx, text, W * 0.5, rMax * 0.13, rMax * 0.06, 700);
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(text, cx, H - rMax * 0.22);
+      }
+    } else if (layout === "nube") {
+      const bandY = iy + s, bandH = H - bandY, bw = s * 0.74, bx = W / 2 - bw / 2, by = bandY + bandH * 0.22, bh = bandH * 0.6;
+      ctx.fillStyle = code;
+      ctx.beginPath();
+      const puffs = 5, puffR = bh * 0.62;
+      for (let i = 0; i < puffs; i++) { const px = bx + (bw / (puffs - 1)) * i; ctx.moveTo(px + puffR, by); ctx.arc(px, by, puffR, 0, Math.PI * 2); }
+      ctx.rect(bx, by, bw, bh * 0.7);
+      ctx.fill("nonzero");
+      ctx.beginPath(); ctx.moveTo(W / 2 - bh * 0.22, by + bh * 0.55); ctx.lineTo(W / 2 + bh * 0.22, by + bh * 0.55); ctx.lineTo(W / 2, by - bh * 0.35); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = base;
+      fitFontPx(ctx, text, bw * 0.8, bh * 0.4, bh * 0.15);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(text, W / 2, by + bh * 0.34);
     }
   }
 
@@ -736,6 +812,17 @@
   }
 
   /* Composes the frame (layout + border + corner icon) around an already-built QR canvas. */
+  function outlinePath(ctx, W, H, layout) {
+    if (layout === "banderin") {
+      const notch = H * 0.16;
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H - notch);
+      ctx.lineTo(W / 2, H); ctx.lineTo(0, H - notch); ctx.closePath();
+    } else if (layout === "disco") {
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, Math.min(W, H) / 2, 0, Math.PI * 2);
+    }
+  }
+
   async function composeFinalCanvas(sizePx) {
     const base = await composeQRCanvas(sizePx);
     const layout = state.frame, hasIcon = state.frameIcon !== "ninguno";
@@ -750,10 +837,13 @@
     const c = document.createElement("canvas");
     c.width = W; c.height = H;
     const ctx = c.getContext("2d");
+    ctx.save();
+    if (layout === "banderin" || layout === "disco") { outlinePath(ctx, W, H, layout); ctx.clip(); }
     ctx.fillStyle = state.colorBase; ctx.fillRect(0, 0, W, H);
     const ix = Math.round(s * left), iy = Math.round(s * top);
     ctx.drawImage(base, ix, iy, s, s);
     if (layout !== "ninguno") drawLayoutDecoration(ctx, layout, { W, H, s, ix, iy });
+    ctx.restore();
     if (hasIcon) drawCornerIcon(ctx, W, H, s);
     return c;
   }

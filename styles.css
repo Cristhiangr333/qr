@@ -103,12 +103,6 @@ h1, h2, h3, h4 { text-wrap: balance; line-height: 1.08; letter-spacing: -0.01em;
 .tool-grid { display: grid; gap: 1.75rem; }
 @media (min-width: 960px) {
   .tool-grid { grid-template-columns: 1fr 1fr; align-items: start; }
-  .tool-controls {
-    max-height: calc(100svh - 118px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding-right: .5rem;
-  }
   .tool-preview {
     position: sticky;
     top: 78px; /* sticky header (62px) + gap */
