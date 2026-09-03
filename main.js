@@ -462,6 +462,64 @@
     if (myGen !== renderGen) return; // a newer render started meanwhile
     host.innerHTML = "";
     host.appendChild(canvas);
+    updateFloatingPreview(canvas);
+  }
+
+  /* ---------------------------------------------------------------------
+   * Mobile floating mini-preview: on narrow screens the real preview sits
+   * below every control in document order, so without this the person is
+   * designing "blind" until they scroll all the way down. This mirrors the
+   * already-composed canvas (no extra QR generation) into a small pinned
+   * thumbnail, and auto-hides once the real preview scrolls into view.
+   * ------------------------------------------------------------------- */
+  const floatState = { mql: null, realPreviewVisible: true };
+
+  function updateFloatingPreview(sourceCanvas) {
+    const mini = $("[data-mobile-float-canvas]");
+    if (!mini || !sourceCanvas) return;
+    const c = document.createElement("canvas");
+    c.width = c.height = 116; // small fixed raster size, displayed at 58px (retina-sharp)
+    const ctx = c.getContext("2d");
+    ctx.drawImage(sourceCanvas, 0, 0, c.width, c.height);
+    mini.innerHTML = "";
+    mini.appendChild(c);
+    syncFloatVisibility();
+  }
+
+  function syncFloatVisibility() {
+    const btn = $("[data-mobile-float]");
+    if (!btn) return;
+    const isMobile = !floatState.mql || floatState.mql.matches;
+    btn.hidden = !isMobile || floatState.realPreviewVisible;
+  }
+
+  function initFloatingPreview() {
+    const btn = $("[data-mobile-float]");
+    const realPreview = $(".preview-2d");
+    if (!btn || !realPreview) return;
+
+    if (window.matchMedia) {
+      floatState.mql = window.matchMedia("(max-width: 959px)");
+      const onChange = () => syncFloatVisibility();
+      if (floatState.mql.addEventListener) floatState.mql.addEventListener("change", onChange);
+      else if (floatState.mql.addListener) floatState.mql.addListener(onChange);
+    }
+
+    if (window.IntersectionObserver) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(e => { floatState.realPreviewVisible = e.isIntersecting; });
+        syncFloatVisibility();
+      }, { rootMargin: "-70px 0px 0px 0px", threshold: 0.15 });
+      io.observe(realPreview);
+    } else {
+      floatState.realPreviewVisible = false; // no IO support: keep the floating aid available
+    }
+
+    btn.addEventListener("click", () => {
+      realPreview.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    syncFloatVisibility();
   }
 
   /* ---------------------------------------------------------------------
@@ -1590,6 +1648,7 @@
     safe(renderQR2D, "renderQR2D");
     safe(renderWarnings, "renderWarnings");
     safe(setupViewerVisibilityGuards, "setupViewerVisibilityGuards");
+    safe(initFloatingPreview, "initFloatingPreview");
     safe(initDownloadDialog, "initDownloadDialog");
     safe(initCornerToast, "initCornerToast");
     document.documentElement.classList.add("is-ready");
